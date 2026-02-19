@@ -8,6 +8,7 @@ import {
   BarChart3,
   Settings,
   Bot,
+  BookOpen,
 } from "lucide-react";
 
 import {
@@ -39,6 +40,11 @@ const navigationItems = [
     title: "分析結果",
     href: "/results",
     icon: BarChart3,
+  },
+  {
+    title: "機能ガイド",
+    href: "/guide",
+    icon: BookOpen,
   },
   {
     title: "設定",

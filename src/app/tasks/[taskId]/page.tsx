@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
-import { ArrowLeft, Play, Loader2, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, Play, Loader2, CheckCircle2, HelpCircle } from "lucide-react";
 
 import { getTaskById } from "@/lib/task-definitions";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -118,6 +118,13 @@ export default function TaskPage() {
             {task.title}
           </h1>
           <p className="mt-1 text-muted-foreground">{task.description}</p>
+          <Link
+            href={`/guide#${task.id}`}
+            className="mt-2 inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-primary"
+          >
+            <HelpCircle className="size-3" />
+            この機能の詳しい説明を見る
+          </Link>
         </div>
       </div>
 
