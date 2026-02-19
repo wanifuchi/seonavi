@@ -39,8 +39,17 @@ function buildAnalysisDirective(serviceName: string, area: string): string {
 }
 
 /**
+ * HTMLタグを除去してプレーンテキストにする
+ */
+function stripHtml(text: string): string {
+  return text.replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim();
+}
+
+/**
  * PageData配列をAI分析プロンプト用のMarkdown文字列に変換する。
  * 成功ページはSEO関連データを構造化、失敗ページはエラー情報を記載。
+ * トークン節約: navLinksはテキストのみ・重複排除・最大15件、
+ * contentPreviewは200文字まで、H3は最大10件。
  */
 function formatPageDataForAI(pages: PageData[]): string {
   const successCount = pages.filter((p) => p.status === "success").length;
@@ -69,20 +78,27 @@ function formatPageDataForAI(pages: PageData[]): string {
         lines.push(`- H2見出し: ${page.h2List.join(" | ")}`);
       }
       if (page.h3List.length > 0) {
-        lines.push(`- H3見出し: ${page.h3List.slice(0, 20).join(" | ")}`);
+        lines.push(`- H3見出し: ${page.h3List.slice(0, 10).join(" | ")}`);
       }
       lines.push(
         `- メタディスクリプション: ${page.metaDescription || "(なし)"}`,
       );
       if (page.navLinks.length > 0) {
-        lines.push(
-          `- ナビゲーション: ${page.navLinks.map((n) => n.text).join(" | ")}`,
-        );
+        // HTMLタグ除去 → 空文字排除 → 重複排除 → 最大15件
+        const navTexts = [
+          ...new Set(
+            page.navLinks
+              .map((n) => stripHtml(n.text))
+              .filter((t) => t.length > 0),
+          ),
+        ].slice(0, 15);
+        lines.push(`- ナビゲーション: ${navTexts.join(" | ")}`);
       }
       lines.push(`- 内部リンク数: ${page.internalLinks.length}`);
       lines.push(`- 文字数: ${page.wordCount}`);
       if (page.contentPreview) {
-        lines.push(`- 本文冒頭: ${page.contentPreview}`);
+        const preview = stripHtml(page.contentPreview).slice(0, 200);
+        lines.push(`- 本文冒頭: ${preview}`);
       }
       if (page.jsonLd.length > 0) {
         lines.push(`- JSON-LD: ${page.jsonLd.length}件検出`);
