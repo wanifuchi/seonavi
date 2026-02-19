@@ -71,7 +71,7 @@ export async function callSubAgent(
     model,
     system: systemPrompt,
     prompt: taskPrompt,
-    maxOutputTokens: 4096,
+    maxOutputTokens: 8192,
   });
 
   return text;
@@ -91,7 +91,7 @@ export function callSubAgentStream(
     model,
     system: systemPrompt,
     prompt: taskPrompt,
-    maxOutputTokens: 4096,
+    maxOutputTokens: 8192,
   });
 }
 
