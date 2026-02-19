@@ -327,6 +327,13 @@ export class HTMLParser {
 // フェッチャー
 // --------------------------------------------------------
 
+/** PageFetcherのオプション（コンストラクタで指定可能） */
+export interface PageFetcherOptions {
+  maxRetries?: number;
+  retryWait?: number;  // ミリ秒
+  timeout?: number;    // ミリ秒
+}
+
 export class PageFetcher {
   static readonly DEFAULT_HEADERS: Record<string, string> = {
     "User-Agent":
@@ -338,9 +345,15 @@ export class PageFetcher {
       "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
   };
 
-  private maxRetries = 3;
-  private retryWait = 30_000; // ミリ秒
-  private timeout = 15_000; // ミリ秒
+  private maxRetries: number;
+  private retryWait: number;
+  private timeout: number;
+
+  constructor(options?: PageFetcherOptions) {
+    this.maxRetries = options?.maxRetries ?? 3;
+    this.retryWait = options?.retryWait ?? 30_000;
+    this.timeout = options?.timeout ?? 15_000;
+  }
 
   /**
    * URLのページデータを取得して返す
@@ -406,6 +419,73 @@ export class PageFetcher {
 
     page.status = "error";
     return page;
+  }
+
+  /**
+   * URLのページデータと生HTMLの両方を取得して返す。
+   * SchemaExtractorなど生HTMLが必要なツール向け。
+   */
+  async fetchRaw(url: string): Promise<{ html: string; pageData: PageData }> {
+    const page = createPageData(url);
+
+    for (let attempt = 1; attempt <= this.maxRetries; attempt++) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(
+          () => controller.abort(),
+          this.timeout,
+        );
+
+        const resp = await fetch(url, {
+          headers: PageFetcher.DEFAULT_HEADERS,
+          signal: controller.signal,
+          redirect: "follow",
+        });
+
+        clearTimeout(timeoutId);
+        page.httpStatus = resp.status;
+
+        if (resp.status === 200) {
+          const html = await resp.text();
+          const parser = new HTMLParser(html, url);
+          const parsed = parser.parseAll();
+          Object.assign(page, parsed);
+          page.status = "success";
+          return { html, pageData: page };
+        } else if (resp.status === 403 || resp.status === 401) {
+          page.status = "blocked";
+          page.errorMessage = `HTTP ${resp.status} - アクセス制限`;
+          return { html: "", pageData: page };
+        } else if (resp.status === 404) {
+          page.status = "error";
+          page.errorMessage = "HTTP 404 - ページ非存在";
+          return { html: "", pageData: page };
+        } else {
+          page.errorMessage = `HTTP ${resp.status}`;
+        }
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          page.status = "timeout";
+          page.errorMessage = `タイムアウト（試行${attempt}/${this.maxRetries}）`;
+        } else if (
+          error instanceof TypeError &&
+          String(error).includes("fetch")
+        ) {
+          page.status = "error";
+          page.errorMessage = `接続エラー: ${error}`;
+        } else {
+          page.status = "error";
+          page.errorMessage = `不明なエラー: ${error}`;
+        }
+      }
+
+      if (attempt < this.maxRetries) {
+        await this.sleep(this.retryWait);
+      }
+    }
+
+    page.status = "error";
+    return { html: "", pageData: page };
   }
 
   /**

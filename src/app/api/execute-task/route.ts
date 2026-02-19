@@ -95,7 +95,8 @@ export async function POST(request: NextRequest) {
         result = await runTask04Positioning(
           fields.myUrl,
           competitors,
-          fields.serviceName || ""
+          fields.serviceName || "",
+          fields.area || ""
         );
         break;
       }

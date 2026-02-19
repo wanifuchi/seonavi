@@ -144,6 +144,13 @@ export const TASKS: TaskDefinition[] = [
         placeholder: "例: 葬儀社",
         required: true,
       },
+      {
+        name: "area",
+        label: "対象エリア",
+        type: "text",
+        placeholder: "例: 横浜市",
+        required: false,
+      },
     ],
   },
   {
