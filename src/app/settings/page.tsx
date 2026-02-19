@@ -121,7 +121,7 @@ export default function SettingsPage() {
             <Label htmlFor="serviceName">サービス名</Label>
             <Input
               id="serviceName"
-              placeholder="例: 渋谷歯科クリニック"
+              placeholder="例: 横浜セレモニーホール"
               value={serviceName}
               onChange={(e) => setServiceName(e.target.value)}
             />
