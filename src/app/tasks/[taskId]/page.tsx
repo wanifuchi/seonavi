@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
@@ -26,6 +26,40 @@ export default function TaskPage() {
   const [progress, setProgress] = useState(0);
   const [result, setResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // 設定ページの保存値をフォームに自動反映
+  useEffect(() => {
+    if (!task) return;
+    try {
+      const stored = localStorage.getItem("seo-agent-config");
+      if (!stored) return;
+      const config = JSON.parse(stored);
+      const prefill: Record<string, string> = {};
+
+      for (const field of task.fields) {
+        if (field.name === "serviceName" && config.serviceName) {
+          prefill[field.name] = config.serviceName;
+        } else if (field.name === "area" && config.area) {
+          prefill[field.name] = config.area;
+        } else if (field.name === "myUrl" && config.myUrl) {
+          prefill[field.name] = config.myUrl;
+        } else if (
+          field.name === "competitorUrls" &&
+          config.competitorUrls?.length
+        ) {
+          prefill[field.name] = config.competitorUrls
+            .filter((u: string) => u.trim())
+            .join("\n");
+        }
+      }
+
+      if (Object.keys(prefill).length > 0) {
+        setFormData((prev) => ({ ...prefill, ...prev }));
+      }
+    } catch {
+      // パースエラーは無視
+    }
+  }, [task]);
 
   if (!task) {
     return (

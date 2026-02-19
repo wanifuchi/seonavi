@@ -1,21 +1,13 @@
 /**
  * orchestrator-tasks.ts - 各タスクのパイプライン定義
  *
- * Python版 orchestrator.py の各タスク処理フローをTypeScriptに移植。
  * 各タスクは複数のサブエージェントを順番に呼び出し、結果を統合する。
+ * フォームの全フィールドがAIプロンプトに反映されるよう設計。
  */
 
-import { callSubAgent, runPipeline } from "./agent-runner";
+import { runPipeline } from "./agent-runner";
 
 // ---------- 共通ユーティリティ ----------
-
-function getDomain(url: string): string {
-  try {
-    return new URL(url).hostname.replace("www.", "");
-  } catch {
-    return "unknown";
-  }
-}
 
 function now(): string {
   return new Date().toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" });
@@ -25,15 +17,24 @@ function now(): string {
 
 export async function runTask01ContentGap(
   urls: string[],
+  serviceName: string,
+  area: string,
   onProgress?: (step: number, total: number, label: string) => void
 ): Promise<string> {
+  const serviceContext =
+    serviceName && area
+      ? `\n\n対象ビジネス: ${serviceName}（${area}）`
+      : serviceName
+        ? `\n\n対象ビジネス: ${serviceName}`
+        : "";
+
   const results = await runPipeline(
     [
       {
         agent: "crawler",
         label: "競合サイトのクロール",
         buildPrompt: () => `
-以下の競合サイトURLに順番にアクセスし、各サイトのSEO情報を取得してください。
+以下の競合サイトURLに順番にアクセスし、各サイトのSEO情報を取得してください。${serviceContext}
 
 対象URL:
 ${urls.map((u) => `- ${u}`).join("\n")}
@@ -51,7 +52,7 @@ ${urls.map((u) => `- ${u}`).join("\n")}
         agent: "analyzer",
         label: "ギャップ分析",
         buildPrompt: ([crawlResult]) => `
-以下は競合サイトの取得データです。
+以下は競合サイトの取得データです。${serviceContext}
 
 ${crawlResult}
 
@@ -63,13 +64,13 @@ ${crawlResult}
 | ギャップテーマ | 扱っている競合数 | 機会分類 |
 |---|---|---|
 
-ブルーオーシャンと参入余地を明確に分けて記載。`,
+ブルーオーシャンと参入余地を明確に分けて記載。${serviceName ? `\n\n「${serviceName}」の視点からギャップを分析してください。` : ""}`,
       },
       {
         agent: "writer",
         label: "記事テーマ生成",
         buildPrompt: ([, analyzeResult]) => `
-以下のコンテンツギャップ分析をもとに、上位表示を狙う記事テーマを5本作成してください。
+以下のコンテンツギャップ分析をもとに、上位表示を狙う記事テーマを5本作成してください。${serviceContext}
 
 ${analyzeResult}
 
@@ -97,6 +98,7 @@ H2構成:
   return `# ① コンテンツギャップ分析レポート
 
 実行日時: ${now()}
+${serviceName ? `サービス: ${serviceName}` : ""}${area ? ` | 地域: ${area}` : ""}
 対象URL:
 ${urls.map((u) => `- ${u}`).join("\n")}
 
@@ -123,15 +125,20 @@ ${writeResult}`;
 
 export async function runTask02SchemaAudit(
   url: string,
+  businessType: string,
   onProgress?: (step: number, total: number, label: string) => void
 ): Promise<string> {
+  const businessContext = businessType
+    ? `\nビジネスタイプ: ${businessType}`
+    : "";
+
   const results = await runPipeline(
     [
       {
         agent: "crawler",
         label: "ページ取得",
         buildPrompt: () =>
-          `${url} にアクセスし、JSON-LD・Microdata・RDFaを取得してください。推測禁止。`,
+          `${url} にアクセスし、HTML全体のJSON-LD・Microdata・RDFaを取得してください。推測禁止。`,
       },
       {
         agent: "schema",
@@ -139,7 +146,10 @@ export async function runTask02SchemaAudit(
         buildPrompt: ([crawl]) => `
 HTMLソース:
 ${crawl}
+${businessContext}
+
 全Schema構造化データを抽出・監査し、JSON-LDを生成してください。
+${businessType ? `ビジネスタイプ「${businessType}」に適した@typeを使用してJSON-LDを生成してください。` : ""}
 出力: 既存Schema一覧テーブル + 不足Schema優先度テーブル + 優先度「高」のJSON-LD`,
       },
     ],
@@ -150,6 +160,7 @@ ${crawl}
 
 実行日時: ${now()}
 対象URL: ${url}
+${businessType ? `ビジネスタイプ: ${businessType}` : ""}
 
 ---
 
@@ -159,19 +170,24 @@ ${results[1]}`;
 // ---------- Task03: キーワード抽出 ----------
 
 export async function runTask03Keywords(
-  service: string,
+  serviceName: string,
   area: string,
-  count: number = 20,
+  additionalContext: string,
   onProgress?: (step: number, total: number, label: string) => void
 ): Promise<string> {
+  const count = 20;
+  const contextNote = additionalContext
+    ? `\n\n補足情報: ${additionalContext}`
+    : "";
+
   const results = await runPipeline(
     [
       {
         agent: "analyzer",
         label: "キーワード生成",
         buildPrompt: () => `
-「${service}」を「${area}」で提供するビジネス向け。
-購入意欲の高いローカルキーワードを${count}個生成してください。
+「${serviceName}」を「${area}」で提供するビジネス向け。
+購入意欲の高いローカルキーワードを${count}個生成してください。${contextNote}
 
 重視: ${area}の地域意図 / 緊急性（今すぐ・夜間・即日）/ 購入意図（費用・料金）/ 信頼確認（口コミ・評判）
 カテゴリ別Markdownテーブルで出力。ボリューム不明は「要GSC確認」と記載。`,
@@ -183,7 +199,8 @@ export async function runTask03Keywords(
   return `# ③ 「今すぐ客」キーワード抽出レポート
 
 実行日時: ${now()}
-サービス: ${service} | 地域: ${area}
+サービス: ${serviceName} | 地域: ${area}
+${additionalContext ? `補足: ${additionalContext}` : ""}
 
 ---
 
@@ -203,9 +220,13 @@ ${results[0]}
 export async function runTask04Positioning(
   myUrl: string,
   competitors: string[],
+  serviceName: string,
   onProgress?: (step: number, total: number, label: string) => void
 ): Promise<string> {
   const allUrls = [myUrl, ...competitors];
+  const serviceContext = serviceName
+    ? `\n業種・サービス: ${serviceName}`
+    : "";
 
   const results = await runPipeline(
     [
@@ -213,7 +234,7 @@ export async function runTask04Positioning(
         agent: "crawler",
         label: "全サイトのクロール",
         buildPrompt: () => `
-以下のURLに順番にアクセスし、情報を取得してください。
+以下のURLに順番にアクセスし、情報を取得してください。${serviceContext}
 
 ${allUrls.map((u) => `- ${u}`).join("\n")}
 
@@ -227,13 +248,14 @@ ${allUrls.map((u) => `- ${u}`).join("\n")}
 クロール結果:
 ${crawl}
 
-最初のURL（${myUrl}）が自社。残りが競合です。
+最初のURL（${myUrl}）が自社。残りが競合です。${serviceContext}
 
 ## 1. サービス比較表
 ## 2. 地域ターゲット比較
 ## 3. 信頼要素比較
 ## 4. 自社が弱い点（具体的に）
 ## 5. 自社の優位性（具体的に）
+${serviceName ? `\n「${serviceName}」業界の視点で分析してください。` : ""}
 
 推測禁止。取得データに基づく事実のみ。`,
       },
@@ -244,6 +266,7 @@ ${crawl}
   return `# ④ ポジショニング比較レポート
 
 実行日時: ${now()}
+${serviceName ? `サービス: ${serviceName}` : ""}
 自社URL: ${myUrl}
 競合URL: ${competitors.join(", ")}
 
@@ -255,37 +278,40 @@ ${results[1]}`;
 // ---------- Task05: GBP投稿最適化 ----------
 
 export async function runTask05GbpPosts(
-  competitorUrls: string[],
+  serviceName: string,
   area: string,
-  service: string = "葬儀",
+  keywords: string[],
+  tone: string,
   onProgress?: (step: number, total: number, label: string) => void
 ): Promise<string> {
+  const keywordNote =
+    keywords.length > 0
+      ? `\n\n使用するキーワード:\n${keywords.map((k) => `- ${k}`).join("\n")}`
+      : "";
+  const toneNote = tone ? `\nトーン・スタイル: ${tone}` : "";
+
   const results = await runPipeline(
     [
       {
-        agent: "crawler",
-        label: "競合GBP分析",
-        buildPrompt: () => `
-以下の競合GBP/Webサイトにアクセスし、投稿情報を取得してください。
-
-${competitorUrls.map((u) => `- ${u}`).join("\n")}
-
-取得: 投稿タイプ・頻度・テーマ・CTAの文言・使用キーワード
-取得できない場合は「取得不可」と記載。推測禁止。`,
-      },
-      {
         agent: "writer",
         label: "GBP投稿10本生成",
-        buildPrompt: ([crawl]) => `
-競合分析:
-${crawl}
+        buildPrompt: () => `
+${area}の${serviceName}向けGBP（Googleビジネスプロフィール）投稿を10本作成してください。${keywordNote}${toneNote}
 
-${area}の${service}向けGBP投稿を10本作成。
-要件: 150〜200文字 / ${area}のランドマーク含む / 「今すぐ電話」CTA必須 / 競合未使用KWを積極使用
+要件:
+- 各投稿は150〜200文字
+- ${area}のランドマークや地域特性を含む
+- 「今すぐ電話」等のCTA必須
+${keywords.length > 0 ? `- 指定キーワードを積極的に使用` : "- SEOに効果的なキーワードを含む"}
+${tone ? `- 「${tone}」なトーンで作成` : "- 親しみやすく信頼感のあるトーンで作成"}
 
 ---
 【投稿No.X】
-タイプ: / テーマ: / 本文: / CTA: / 使用KW:
+タイプ: （最新情報/イベント/特典）
+テーマ:
+本文:
+CTA:
+使用KW:
 ---`,
       },
     ],
@@ -295,41 +321,47 @@ ${area}の${service}向けGBP投稿を10本作成。
   return `# ⑤ GBP投稿最適化レポート
 
 実行日時: ${now()}
-地域: ${area} | サービス: ${service}
-
----
-
-## 競合GBP分析
-
-${results[0]}
+地域: ${area} | サービス: ${serviceName}
+${keywords.length > 0 ? `指定KW: ${keywords.join(", ")}` : ""}
+${tone ? `トーン: ${tone}` : ""}
 
 ---
 
 ## GBP投稿（10本）
 
-${results[1]}`;
+${results[0]}`;
 }
 
 // ---------- Task06: 投稿戦略設計 ----------
 
 export async function runTask06PostStrategy(
+  serviceName: string,
   area: string,
-  service: string,
+  frequency: string,
+  platforms: string,
   onProgress?: (step: number, total: number, label: string) => void
 ): Promise<string> {
+  const frequencyNote = frequency
+    ? `\n目標投稿頻度: ${frequency}`
+    : "";
+  const platformNote = platforms
+    ? `\n対象プラットフォーム: ${platforms}`
+    : "";
+
   const results = await runPipeline(
     [
       {
         agent: "writer",
         label: "投稿戦略設計",
         buildPrompt: () => `
-${area}の${service}ビジネス向けGBP投稿戦略を設計してください。
+${area}の${serviceName}ビジネス向け投稿戦略を設計してください。${frequencyNote}${platformNote}
 
 1. Googleマップ上位表示と相関する投稿パターン（根拠付き）
-2. 推奨投稿頻度・タイミング
+2. 推奨投稿頻度・タイミング${frequency ? `（希望: ${frequency}）` : ""}
 3. 競合が使っていないキーワード5個と活用法
 4. 月別重点テーマ（簡潔に）
 5. 4週間分の週間投稿計画（曜日別テーマ・キーワード・CTA付き）
+${platforms ? `6. ${platforms}それぞれに最適化した投稿アドバイス` : ""}
 
 抽象論禁止。すぐ実行できる具体的内容のみ。`,
       },
@@ -340,7 +372,9 @@ ${area}の${service}ビジネス向けGBP投稿戦略を設計してください
   return `# ⑥ GBP投稿戦略レポート
 
 実行日時: ${now()}
-地域: ${area} | サービス: ${service}
+地域: ${area} | サービス: ${serviceName}
+${frequency ? `投稿頻度: ${frequency}` : ""}
+${platforms ? `プラットフォーム: ${platforms}` : ""}
 
 ---
 
@@ -352,19 +386,29 @@ ${results[0]}`;
 // ---------- Task07: キーワードリサーチ高速化 ----------
 
 export async function runTask07KeywordResearch(
-  url: string,
-  pages: number = 20,
+  urls: string[],
+  serviceName: string,
+  area: string,
   onProgress?: (step: number, total: number, label: string) => void
 ): Promise<string> {
+  const pages = 20;
+  const serviceContext =
+    serviceName && area
+      ? `\n\n分析の視点: ${serviceName}（${area}）`
+      : serviceName
+        ? `\n\n分析の視点: ${serviceName}`
+        : "";
+
   const results = await runPipeline(
     [
       {
         agent: "crawler",
         label: "競合サイトクロール",
         buildPrompt: () => `
-競合サイトの上位${pages}ページを取得してください。
+以下の競合サイトの上位${pages}ページを取得してください。
 
-対象URL: ${url}
+対象URL:
+${urls.map((u) => `- ${u}`).join("\n")}
 
 手順: /sitemap.xml → ナビゲーション → 内部リンクの順に収集。
 各ページ: URL・タイトル・H1・メタディスクリプション・本文冒頭200文字を取得。
@@ -376,9 +420,12 @@ JSON形式で出力。推測禁止。`,
         buildPrompt: ([crawl]) => `
 競合ページデータ:
 ${crawl}
+${serviceContext}
+
+${serviceName ? `「${serviceName}」${area ? `（${area}）` : ""}のビジネスに役立つキーワードを優先的に抽出してください。` : ""}
 
 優先順位付きテーブル:
-| 優先度 | URL | メインKW | 関連KW | 検索Vol目安 | 難易度(1-10) | 上位表示難易度 |
+| 優先度 | URL | メインKW | 関連KW | 検索Vol目安 | 難易度(1-10) | 上位表示難度 |
 |---|---|---|---|---|---|---|
 
 - 高: 検索Vol大 × 難易度低（ブルーオーシャン）
@@ -394,7 +441,9 @@ Vol不明は「要Ahrefs確認」。テーブル後に最優先KW上位5個を�
   return `# ⑦ キーワードリサーチ高速化レポート
 
 実行日時: ${now()}
-競合サイト: ${url} | 分析ページ数: ${pages}
+競合サイト: ${urls.join(", ")}
+${serviceName ? `サービス: ${serviceName}` : ""}${area ? ` | 地域: ${area}` : ""}
+分析ページ数: ${pages}
 
 ---
 
