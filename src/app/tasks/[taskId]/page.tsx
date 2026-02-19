@@ -3,7 +3,8 @@
 import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { Components } from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { ArrowLeft, Play, Loader2, CheckCircle2, HelpCircle } from "lucide-react";
 
 import { getTaskById } from "@/lib/task-definitions";
@@ -15,6 +16,99 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
+
+// Markdownカスタムコンポーネント - 結果の視認性を向上
+const markdownComponents: Components = {
+  h1: ({ children }) => (
+    <h1 className="mt-6 mb-4 border-b border-border pb-2 text-xl font-bold text-foreground first:mt-0">
+      {children}
+    </h1>
+  ),
+  h2: ({ children }) => (
+    <h2 className="mt-6 mb-3 border-b border-border/50 pb-1.5 text-lg font-semibold text-foreground">
+      {children}
+    </h2>
+  ),
+  h3: ({ children }) => (
+    <h3 className="mt-4 mb-2 text-base font-semibold text-foreground">
+      {children}
+    </h3>
+  ),
+  p: ({ children }) => (
+    <p className="mb-3 leading-relaxed text-muted-foreground last:mb-0">
+      {children}
+    </p>
+  ),
+  ul: ({ children }) => (
+    <ul className="mb-4 space-y-1.5 pl-5 list-disc marker:text-primary/60">
+      {children}
+    </ul>
+  ),
+  ol: ({ children }) => (
+    <ol className="mb-4 space-y-1.5 pl-5 list-decimal marker:text-primary/60">
+      {children}
+    </ol>
+  ),
+  li: ({ children }) => (
+    <li className="text-muted-foreground leading-relaxed">{children}</li>
+  ),
+  strong: ({ children }) => (
+    <strong className="font-semibold text-foreground">{children}</strong>
+  ),
+  hr: () => <hr className="my-5 border-border/60" />,
+  a: ({ href, children }) => (
+    <a href={href} target="_blank" rel="noopener noreferrer" className="text-primary underline underline-offset-2 hover:text-primary/80">
+      {children}
+    </a>
+  ),
+  blockquote: ({ children }) => (
+    <blockquote className="my-3 border-l-3 border-primary/40 pl-4 italic text-muted-foreground">
+      {children}
+    </blockquote>
+  ),
+  // テーブル
+  table: ({ children }) => (
+    <div className="my-4 overflow-x-auto rounded-lg border border-border">
+      <table className="w-full text-sm">{children}</table>
+    </div>
+  ),
+  thead: ({ children }) => (
+    <thead className="bg-muted/50 text-foreground">{children}</thead>
+  ),
+  tbody: ({ children }) => (
+    <tbody className="divide-y divide-border">{children}</tbody>
+  ),
+  tr: ({ children }) => (
+    <tr className="transition-colors hover:bg-muted/30">{children}</tr>
+  ),
+  th: ({ children }) => (
+    <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider whitespace-nowrap">
+      {children}
+    </th>
+  ),
+  td: ({ children }) => (
+    <td className="px-3 py-2 text-muted-foreground">{children}</td>
+  ),
+  // コードブロック
+  code: ({ className, children }) => {
+    const isBlock = className?.includes("language-") || String(children).includes("\n");
+    if (isBlock) {
+      return (
+        <div className="group relative my-4">
+          <pre className="overflow-x-auto rounded-lg border border-border bg-muted/30 p-4 text-xs leading-relaxed">
+            <code className="text-muted-foreground">{children}</code>
+          </pre>
+        </div>
+      );
+    }
+    return (
+      <code className="rounded-md bg-muted/50 px-1.5 py-0.5 text-xs font-mono text-foreground">
+        {children}
+      </code>
+    );
+  },
+  pre: ({ children }) => <>{children}</>,
+};
 
 export default function TaskPage() {
   const params = useParams();
@@ -263,8 +357,13 @@ export default function TaskPage() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="prose prose-invert max-w-none text-sm">
-              <ReactMarkdown>{result}</ReactMarkdown>
+            <div className="max-w-none text-sm">
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                components={markdownComponents}
+              >
+                {result}
+              </ReactMarkdown>
             </div>
           </CardContent>
         </Card>
